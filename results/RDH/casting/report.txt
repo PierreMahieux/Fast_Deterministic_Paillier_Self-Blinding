@@ -1,0 +1,10 @@
+{
+	"config": {"key_size": 1024, "quantisation_step": 4, "result_folder": "/home/pierremahieux/Documents/Projets/Fast_Paillier_Deterministic_Self_Blinding/src/reversible_data_hiding/../../results/RDH/casting/", "model_path": "/home/pierremahieux/Documents/Projets/Fast_Paillier_Deterministic_Self_Blinding/src/reversible_data_hiding/../../datasets/meshes/casting.obj", "model_name": "casting.obj"},
+	"time_encryption": 26.582290410995483,
+	"time_embedding": 0.379443883895874,
+	"time_decryption": 8.918280839920044,
+	"time_extraction_histogram_shifting": 0.0021424293518066406,
+	"time_extraction_self_blinding": 3.790855407714844e-05,
+	"BER_histogram_shifting": 0.0,
+	"BER_self_blinding": 0.0
+}
