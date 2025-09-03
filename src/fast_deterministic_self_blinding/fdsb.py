@@ -24,12 +24,12 @@ def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: d
         save_mesh.append(cs)
 
     
-    pre_pro_vertices = _encryption_preprocessing(quant_vertices, encryption_keys["public"][0])
+    preprocessed_vertices = _encryption_preprocessing(quant_vertices, encryption_keys["public"][0])
     
-    assert(np.all(np.greater(pre_pro_vertices, np.zeros((len(pre_pro_vertices), 3)))))
+    assert(np.all(np.greater(preprocessed_vertices, np.zeros((len(preprocessed_vertices), 3)))))
 
     pre_watermarked_vertices = []
-    for v in pre_pro_vertices:
+    for v in preprocessed_vertices:
         v_0 = []
         for i in range(3):
             if (v[i]//qim_step) % 2 == 0:
@@ -38,21 +38,10 @@ def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: d
                 v_0.append(qim_step * (v[i]//qim_step) - (qim_step / 2))
         pre_watermarked_vertices.append(v_0)
 
-    extract_w0 = []
-    for i in range(len(pre_watermarked_vertices)):
-        extract_w0.append((pre_watermarked_vertices[i][0]//qim_step)% 2)
-
     start_time_encryption = time.time()
-    enc_vertices = _encrypt_vertices(pre_pro_vertices, encryption_keys["public"])
-    # enc_vertices = _encrypt_vertices(pre_watermarked_vertices, encryption_keys["public"])
+    enc_vertices = _encrypt_vertices(pre_watermarked_vertices, encryption_keys["public"])
     time_encryption = time.time() - start_time_encryption
 
-    dec_vec = _decrypt_vertices(enc_vertices, encryption_keys)
-    extract_w = []
-    for i in range(len(dec_vec)):
-        extract_w.append((dec_vec[i][1]//qim_step) % 2)
-    assert(np.array_equal(dec_vec, pre_watermarked_vertices))
-    assert(np.sum(extract_w) == 0)
     return {"pre_watermarked_vertices": pre_watermarked_vertices, "encrypted_vertices": enc_vertices, "time_encryption": time_encryption}
 
 def embed(vertices: np.array, watermarks: dict, encryption_keys: dict, config: dict) -> dict:
@@ -66,14 +55,15 @@ def embed(vertices: np.array, watermarks: dict, encryption_keys: dict, config: d
     time_qim = time.time() - start_embedding
 
     ## TODO : Vérifier bon fonctionnement QIM
-    dec_vec = _decrypt_vertices(vertices, encryption_keys)
+    dec_vec = _decrypt_vertices(embedded_vertices, encryption_keys)
     extract_w = []
     for i in range(len(qim_watermark)):
         extract_w.append((dec_vec[i//3][i%3]//qim_step) % 2)
 
+    assert(extract_w == watermarks["qim"])
+
     start_self_blinding = time.time()
     prepared_vertices = _preprocess_deterministic_self_blinding(embedded_vertices, public_encryption_key, len(watermarks["self_blinding"]))
-    assert(extract_w == watermarks["qim"])
     return None
 
 def _preprocess_deterministic_self_blinding(vertices: np.array, public_encryption_key: tuple, length_watermark: int) -> np.array:
@@ -154,7 +144,8 @@ def _decrypt_vertices(vertices, paillier_keys) -> np.array:
     for vertex in vertices:
         decrypted_vertex = []
         for coord in vertex:
-            dec_coord = paillier.decrypt_CRT(coord, priv_key, pub_key)
+            # dec_coord = paillier.decrypt_CRT(coord, priv_key, pub_key)
+            dec_coord = paillier.decrypt(coord, priv_key, pub_key)
             decrypted_vertex.append(dec_coord)
         decrypted_vertices.append(decrypted_vertex)
     return np.array(decrypted_vertices)

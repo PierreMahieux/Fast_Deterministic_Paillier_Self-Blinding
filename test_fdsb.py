@@ -13,7 +13,7 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(__file__)
 
     dataset_path = "./datasets/meshes/"
-    model_name = "casting.obj"
+    model_name = "tumored_brain.obj"
     model_path = os.path.join(script_dir, dataset_path + model_name)
 
     result_folder = os.path.join(script_dir, f"./results/RDH/{model_name.split(".")[0]}/")
@@ -22,9 +22,9 @@ if __name__ == "__main__":
     model = mesh_utils.load_3d_model(os.path.join(script_dir, model_path))
     auth_message = "Copyright 2025 - LATIM" 
     auth_bits = util.generate_watermark_bits(auth_message)
-    num_mgmt_bits = 8
+    num_mgmt_bits = 256
     mgmt_bits=[random.randint(0, 1) for _ in range(num_mgmt_bits)]
-    watermarks = {"qim": [0, 0, 0, 0, 0, 0, 0, 0], "self_blinding": mgmt_bits}
+    watermarks = {"qim": auth_bits, "self_blinding": mgmt_bits}
 
     encryption_keys = paillier.generate_keys(KEY_SIZE)
 
