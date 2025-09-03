@@ -26,52 +26,49 @@ def generate_keys(size) -> dict:
 def get_r(N):
     """Génère un nombre aléatoire r copremier avec N"""
     while True:
-        seed = random_state(int(time.time() * 1000000))
+        seed = random_state(time.time_ns())
         r = mpz_random(seed, N)
         if gcd(r, N) == 1:
             break
     return r
 
-def encrypt(message, pub_key):
+def encrypt(message, public_key):
     """Chiffre un message avec Paillier"""
-    N, g = pub_key
-    r = get_r(N)
-    N2 = N ** 2
-    message = mpz(message)
     
-    # c = g^m * r^N mod N^2
-    g_pow_m = powmod(g, message, N2)
-    r_pow_N = powmod(r, N, N2)
-    c = (g_pow_m * r_pow_N) % N2
-    return c
+    return encrypt_given_r(message, public_key, get_r(public_key[0]))
+    
+    # N, g = public_key
+    # r = get_r(N)
+    # N2 = N ** 2
+    # message = mpz(message)
+    
+    # # c = g^m * r^N mod N^2
+    # g_pow_m = powmod(g, message, N2)
+    # r_pow_N = powmod(r, N, N2)
+    # c = (g_pow_m * r_pow_N) % N2
+    # return c
 
 def encrypt_given_r(message, public_key, r):
-    """Chiffre un message avec Paillier pour une valeur de r donnée"""
-    N, g = public_key
-    N2 = N ** 2
-    message = mpz(message)
-    
-    g_pow_m = powmod(g, message, N2)
-    r_pow_N = powmod(r, N, N2)
-    c = (g_pow_m * r_pow_N) % N2
+    # Chiffre un message avec Paillier pour une valeur de r donnée
+    N2 = public_key[0] ** 2
+    r = powmod(r, public_key[0], N2)
+    c = powmod(public_key[1], message, N2)
+    c = c*r % N2
     return c
 
-def decrypt_CRT(enc, priv_key, pub_key):
-    """Déchiffre avec CRT (plus rapide)"""
-    phi, p, q = priv_key
-    N = pub_key[0]
-    
-    ## Calcul avec CRT
-    xp = powmod(enc, phi, p**2)
-    xq = powmod(enc, phi, q**2)
-    
-    # Inverse de q^2 modulo p^2
-    Invq = invert(q**2, p**2)
-    
-    # Reconstruction CRT
-    x = ((Invq*(xp-xq)) % p**2)*q**2 + xq
-    
-    # Fonction L et déchiffrement final
-    L_result = (x-1)//N
-    m = (L_result * invert(phi, N)) % N
-    return int(m)
+def decrypt_CRT(enc, secret_key, public_key):
+    xp = powmod(enc, secret_key[0], secret_key[1]**2)
+    xq = powmod(enc, secret_key[0], secret_key[2]**2)
+    Invq = invert(secret_key[2]**2, secret_key[1]**2)
+    x = ((Invq*(xp-xq))% secret_key[1]**2)*secret_key[2]**2 +  xq
+    m = ((x-1)//public_key[0]*invert(secret_key[0], public_key[0])) % public_key[0]
+    return m
+
+def decrypt(enc, priv_key, pub_key):
+    N2 = pub_key[0] ** 2
+    phiInv = invert(priv_key[0], pub_key[0])
+    m = powmod(enc, priv_key[0], N2)
+    m = m - 1
+    m = m//pub_key[0]
+    m = m * phiInv % pub_key[0]
+    return m
