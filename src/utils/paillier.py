@@ -23,7 +23,7 @@ def generate_keys(size) -> dict:
     priv_key = (phi, max(p,q), min(p,q))
     return {"public": pub_key, "secret": priv_key}
 
-def get_r(N):
+def generate_r(N):
     """Génère un nombre aléatoire r copremier avec N"""
     while True:
         seed = random_state(time.time_ns())
@@ -35,18 +35,7 @@ def get_r(N):
 def encrypt(message, public_key):
     """Chiffre un message avec Paillier"""
     
-    return encrypt_given_r(message, public_key, get_r(public_key[0]))
-    
-    # N, g = public_key
-    # r = get_r(N)
-    # N2 = N ** 2
-    # message = mpz(message)
-    
-    # # c = g^m * r^N mod N^2
-    # g_pow_m = powmod(g, message, N2)
-    # r_pow_N = powmod(r, N, N2)
-    # c = (g_pow_m * r_pow_N) % N2
-    # return c
+    return encrypt_given_r(message, public_key, generate_r(public_key[0]))
 
 def encrypt_given_r(message, public_key, r):
     # Chiffre un message avec Paillier pour une valeur de r donnée
