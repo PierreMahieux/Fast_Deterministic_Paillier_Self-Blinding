@@ -75,10 +75,10 @@ def _self_blinding_embedding(vertices, watermark, pub_key) -> np.array:
                 
                 if current_parity != bit:
                     # Modifier la parité via self-blinding
-                    P = paillier.get_r(N)
+                    P = paillier.generate_r(N)
                     ## Chercher un P tel que la nouvelle parité soit correcte. !!!! Peut être trés long !!!!!!
                     while True:
-                        P = paillier.get_r(N)
+                        P = paillier.generate_r(N)
                         P_N = powmod(P, N, N2)
                         new_coord = (coord * P_N) % N2
                         if new_coord % 2 == bit:
@@ -124,7 +124,7 @@ def _histogram_shifting_embedding(vertices, watermark, public_key) -> tuple[list
 
     return marked_vertices
 
-def extract(vertices: np.array, encryption_keys: dict, quantisation_step: int, watermarks_sizes: tuple[int, int]) -> dict:
+def extract(vertices: np.array, encryption_keys: dict, quantisation_factor: int, watermarks_sizes: tuple) -> dict:
     start_time = time.time()
     self_blinding_watermark = _self_blinding_extraction(vertices, watermarks_sizes[1])
     time_extraction_self_blinding = time.time() - start_time

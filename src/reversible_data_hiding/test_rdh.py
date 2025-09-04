@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
     model = mesh_utils.load_3d_model(os.path.join(script_dir, model_path))
     auth_message = "Copyright 2025 - LATIM" 
-    auth_bits = util.generate_watermark_bits(auth_message)
+    auth_bits = util.hash_string_to_bits(auth_message)
     num_mgmt_bits = 8
     mgmt_bits=[random.randint(0, 1) for _ in range(num_mgmt_bits)]
     watermarks = {"histogram_shifting": auth_bits, "self_blinding": mgmt_bits}
