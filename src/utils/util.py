@@ -3,8 +3,25 @@ import os
 import uuid
 import datetime
 import json
+import ecdsa
 
-def generate_watermark_bits(message):
+
+def genereate_signing_keys() -> dict:
+    sk = ecdsa.SigningKey.generate(curve=ecdsa.NIST256p)
+    vk = sk.verifying_key
+    return {"signing": sk, "verifying": vk}
+
+def verify_signature(signature, message: bytes, verifying_key) -> bool:
+    try:
+        verifying_key.verify(signature, message)
+        return True
+    except ecdsa.BadSignatureError:
+        return False
+
+def generate_signature(message: bytes, signing_key) -> bytes:
+    return signing_key.sign(message)
+
+def hash_string_to_bits(message: str):
     """
     Génère 256 bits de tatouage à partir d'un hash SHA-256
     
@@ -17,17 +34,20 @@ def generate_watermark_bits(message):
     # Calculer le SHA-256
     hash_bytes = hashlib.sha256(message.encode('utf-8')).digest()
     
-    # Convertir en bits
+    return bytes_to_bits(hash_bytes)
+
+def bytes_to_bits(byte_message: bytes) -> list:
     bits = []
-    for byte in hash_bytes:
+    for byte in byte_message:
         binary_string = format(byte, '08b') 
         for bit_char in binary_string:
             bits.append(int(bit_char))
     
-    print(f"Message: {message}")
-    print(f"SHA-256: {hashlib.sha256(message.encode('utf-8')).hexdigest()}")
-    
     return bits
+
+def bits_to_bytes(bits_message: list) -> bytes:
+    s = ''.join(str(x) for x in bits_message)[0::]
+    return int(s, 2).to_bytes(len(s) // 8, byteorder='big')
 
 def write_report(results: dict) -> None:
     try:
