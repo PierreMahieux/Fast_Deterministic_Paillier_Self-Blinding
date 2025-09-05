@@ -1,2 +1,0 @@
-def pouet():
-    print("wsh")
