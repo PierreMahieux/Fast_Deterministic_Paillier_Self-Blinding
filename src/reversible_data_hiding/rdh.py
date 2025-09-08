@@ -9,17 +9,17 @@ from src.utils import paillier, util, mesh_utils
 def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: dict) -> dict:
     print("Pre-processing")
     vertices = model["vertices"]
-    quantisation_step = config["quantisation_step"]
+    quantisation_factor = config["quantisation_factor"]
 
     # Quantization
-    quant_vertices = np.floor(vertices * (10**quantisation_step)).astype(int)
+    quant_vertices = np.floor(vertices * (10**quantisation_factor)).astype(int)
 
     # Reverse quantisation to compare quantified and recovered meshes
     save_mesh = []
     for v in quant_vertices:
         cs = []
         for c in v:
-            cs.append(c/(10**quantisation_step))
+            cs.append(c/(10**quantisation_factor))
         save_mesh.append(cs)
 
     start_time_encryption = time.time()
@@ -29,13 +29,13 @@ def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: d
     
     return {"encrypted_vertices": enc_vertices, "time_encryption": time_encryption, "quantified_model": save_mesh}
 
-def embed(vertices: np.array, watermark: dict, public_encryption_keys: dict, config: dict) -> dict:
+def embed(vertices: np.array, watermark: tuple, public_encryption_keys: dict, config: dict) -> dict:
     start_time_embedding = time.time()
-    embedded_vertices = _histogram_shifting_embedding(vertices, watermark["histogram_shifting"], public_encryption_keys)
+    embedded_vertices = _histogram_shifting_embedding(vertices, watermark[0], public_encryption_keys)
 
     start_self_blinding = time.time()
-    embedded_vertices = _self_blinding_embedding(embedded_vertices, watermark["self_blinding"], public_encryption_keys)
-    time_sef_blinding = time.time() - start_self_blinding
+    embedded_vertices = _self_blinding_embedding(embedded_vertices, watermark[1], public_encryption_keys)
+    time_self_blinding = time.time() - start_self_blinding
 
     time_embedding = time.time() - start_time_embedding
 
@@ -188,7 +188,7 @@ def _self_blinding_extraction(vertices, watermark_size) -> list:
     # print( f"\nExtraction deuxième tatouage terminé !!!!!!!!!!!!!!!!!" if extracted_bits==management_bits else f"Erreur extraction")
     return extracted_watermark
 
-def recover_mesh(vertices: np.array, public_key: tuple, quantisation_step: int) -> np.array:
+def recover_mesh(vertices: np.array, public_key: tuple, quantisation_factor: int) -> np.array:
     print("Vertices recovery")
     recovered_vertices = []
     N = public_key[0]
@@ -201,7 +201,7 @@ def recover_mesh(vertices: np.array, public_key: tuple, quantisation_step: int) 
             else:  
                 restored_coord = (coord) // 2
             
-            restored_vertex.append(restored_coord / (10**quantisation_step))
+            restored_vertex.append(restored_coord / (10**quantisation_factor))
         recovered_vertices.append(restored_vertex)
 
     return np.array(recovered_vertices).astype(float)

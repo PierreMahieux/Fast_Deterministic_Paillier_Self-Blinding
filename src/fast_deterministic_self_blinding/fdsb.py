@@ -26,7 +26,7 @@ def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
     result = result | result_extracting
 
     result["recovered_mesh"] = recover_mesh(result["decrypted_vertices"], encryption_keys["public"], config["quantisation_factor"])
-    # mesh_utils.save_3d_model(recovered_mesh, model["faces"], os.path.join(result_folder, f"recovered_{model_name}"))
+    mesh_utils.save_3d_model(recovered_mesh, model["faces"], os.path.join(result_folder, f"recovered_{model_name}"))
 
     result["BER_qim"] = util.compare_bits(watermarks[0], result["extracted_watermark"])
 
