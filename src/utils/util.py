@@ -54,16 +54,9 @@ def write_report(results: dict) -> None:
         os.makedirs(os.path.dirname(results["config"]["result_folder"]), exist_ok=True)
         filename = os.path.join(results["config"]["result_folder"], "report.txt")
         with open(filename, 'w') as file:
-            file.write("{\n")
-            file.write(f"\t\"config\": {json.dumps(results["config"])},\n")
-            
-            file.write(f"\t\"time_encryption\": {results["time_encryption"]},\n")
-            file.write(f"\t\"time_embedding\": {results["time_embedding"]},\n")
-            file.write(f"\t\"time_decryption\": {results["time_decryption"]},\n")
-            file.write(f"\t\"time_extraction_histogram_shifting\": {results['time_extraction_histogram_shifting']},\n")
-            file.write(f"\t\"time_extraction_self_blinding\": {results['time_extraction_self_blinding']},\n")
-            file.write(f"\t\"BER_histogram_shifting\": {results['BER_histogram_shifting']},\n")
-            file.write(f"\t\"BER_self_blinding\": {results['BER_self_blinding']}\n}}")
+            for key, value in results.items():
+                if "model" not in key and "vertices" not in key and "signature" not in key and "watermark" not in key:
+                    file.write(f"\"{key}\": {value},\n")
         
         print(f"Rapport sauvegardé dans {filename}")
     except Exception as e:
