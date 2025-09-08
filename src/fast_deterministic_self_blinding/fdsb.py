@@ -6,6 +6,32 @@ import numpy as np
 
 from src.utils import paillier, util, mesh_utils
 
+QIM_STEP = 4
+
+def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
+    print("Run FDSB")
+    signing_keys = util.genereate_signing_keys()
+    keys = {"encryption": encryption_keys, "signing": signing_keys}
+    config["qim_step"] = QIM_STEP
+    
+    result = {"config": config}
+
+    result_preprocess = preprocess(model, encryption_keys, config)
+    result = result | result_preprocess
+
+    result_embedding = embed(result_preprocess["encrypted_vertices"], watermarks, {"encryption": encryption_keys, "signing": signing_keys}, config)
+    result = result | result_embedding
+
+    result_extracting = extract(result_embedding["signed_vertices"], {"encryption": encryption_keys, "signing": signing_keys}, config["quantisation_factor"], (len(watermarks[0]), config["length_self_blinding_watermark"]), config["qim_step"])
+    result = result | result_extracting
+
+    result["recovered_mesh"] = recover_mesh(result["decrypted_vertices"], encryption_keys["public"], config["quantisation_factor"])
+    # mesh_utils.save_3d_model(recovered_mesh, model["faces"], os.path.join(result_folder, f"recovered_{model_name}"))
+
+    result["BER_qim"] = util.compare_bits(watermarks[0], result["extracted_watermark"])
+
+    return result
+
 def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: dict) -> dict:
     print("Pre-processing")
     vertices = model["vertices"]
@@ -40,10 +66,10 @@ def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: d
 
     return {"pre_watermarked_vertices": pre_watermarked_vertices, "encrypted_vertices": enc_vertices, "time_encryption": time_encryption}
 
-def embed(vertices: np.array, watermarks: dict, keys: dict, config: dict) -> dict:
+def embed(vertices: np.array, watermarks: tuple, keys: dict, config: dict) -> dict:
     start_time_embedding = time.time()
     qim_step = config["qim_step"]
-    qim_watermark = watermarks["qim"]
+    qim_watermark = watermarks[0]
     encryption_keys = keys["encryption"]
     signing_keys = keys["signing"]
 
@@ -55,7 +81,7 @@ def embed(vertices: np.array, watermarks: dict, keys: dict, config: dict) -> dic
 
     start_self_blinding = time.time()
 
-    prepared_vertices = _embed_0_in_last_vertices(embedded_vertices, public_encryption_key, config["length_signature"])
+    prepared_vertices = _embed_0_in_last_vertices(embedded_vertices, public_encryption_key, config["length_self_blinding_watermark"])
 
     mesh_hash = hashlib.sha256(np.array2string(prepared_vertices).encode('utf-8')).digest()
     mesh_signature = util.generate_signature(mesh_hash, signing_keys["signing"])
@@ -65,7 +91,7 @@ def embed(vertices: np.array, watermarks: dict, keys: dict, config: dict) -> dic
 
     return {"signed_vertices": signed_vertices, "time_qim": time_qim, "time_self_blinding": time_self_blinding}
 
-def extract(signed_vertices: np.array, keys: dict, quantisation_factor: int, watermarks_length: tuple, config: dict) -> dict:
+def extract(signed_vertices: np.array, keys: dict, quantisation_factor: int, watermarks_length: tuple, qim_step: int) -> dict:
     encryption_keys = keys["encryption"]
     signing_keys = keys["signing"]
 
@@ -81,9 +107,9 @@ def extract(signed_vertices: np.array, keys: dict, quantisation_factor: int, wat
     decrypted_vertices = None
     if model_is_signed:
         decrypted_vertices = _decrypt_vertices(unsigned_vertices, encryption_keys)
-        extracted_watermark = _qim_extraction(decrypted_vertices, config["qim_step"])
+        extracted_watermark = _qim_extraction(decrypted_vertices, qim_step, watermarks_length[0])
 
-    return {"model_signed": model_is_signed, "extracted_watermark": extracted_watermark, "extracted_signature": extracted_signature, "decrypted_vertices": decrypted_vertices}
+    return {"model_is_signed": model_is_signed, "extracted_watermark": extracted_watermark, "extracted_signature": extracted_signature, "decrypted_vertices": decrypted_vertices}
 
 def _extract_signature(vertices: np.array, N, signature_length) -> list:
     signature = []
@@ -117,10 +143,10 @@ def _embed_0_in_last_vertices(vertices: np.array, public_encryption_key: tuple, 
 
     return prepared_vertices
 
-def _qim_extraction(vertices, qim_step) -> list:
+def _qim_extraction(vertices, qim_step, watermark_length) -> list:
     extract_w = []
-    for i in range(len(qim_watermark)):
-        extract_w.append((vertices[i//3][i%3]//qim_step) % 2)
+    for i in range(watermark_length):
+        extract_w.append(int((vertices[i//3][i%3]//qim_step) % 2))
 
     return extract_w
 
@@ -182,7 +208,6 @@ def _decrypt_vertices(vertices, paillier_keys) -> np.array:
     
     Retoune tous les noeuds déchiffrés en tableau numpy"""
     print("Decryption")
-    #temps
     pub_key = paillier_keys["public"]
     priv_key = paillier_keys["secret"]
     decrypted_vertices = []
@@ -198,6 +223,10 @@ def _decrypt_vertices(vertices, paillier_keys) -> np.array:
 
 def recover_mesh(vertices: np.array, public_key: tuple, quantisation_factor: int) -> np.array:
     print("Vertices recovery")
+
+    #TODO : corriger recosntruction mesh : coordonnées négatives ne sont pas bonnes
+    raise NotImplementedError
+
     recovered_vertices = []
     N = public_key[0]
 
@@ -205,11 +234,11 @@ def recover_mesh(vertices: np.array, public_key: tuple, quantisation_factor: int
         restored_vertex = []
         for coord in vertex:
             if coord > N//2 : 
-                restored_coord = (coord - N) # // 2
+                restored_coord = coord - N # // 2
             else:  
-                restored_coord = (coord) # // 2
+                restored_coord = coord # // 2
             
-            restored_vertex.append(restored_coord / (10**quantisation_step))
+            restored_vertex.append(restored_coord / (10**quantisation_factor))
         recovered_vertices.append(restored_vertex)
 
     return np.array(recovered_vertices).astype(float)
