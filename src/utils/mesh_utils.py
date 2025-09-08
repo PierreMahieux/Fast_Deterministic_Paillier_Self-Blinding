@@ -1,12 +1,12 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
-import trimesh
-from mpl_toolkits.mplot3d import Axes3D
+# import matplotlib.pyplot as plt
+# import trimesh
+# from mpl_toolkits.mplot3d import Axes3D
 import time,random
 from datetime import datetime
-import plotly.graph_objects as go
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+# import plotly.graph_objects as go
+# from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 
 def load_3d_model(filename=None):
@@ -65,84 +65,52 @@ def save_3d_model(vertices, faces, filename):
     except Exception as e:
         print(f"Erreur lors de la sauvegarde: {e}")  
         
-def visualize_3d_model_trimesh(vertices, faces, title="Modèle 3D", save_path=None):
-    """Visualise un modèle 3D avec trimesh en png, .jpeg"""
+
+def compute_hausdorff(file1, file2):
+    """
+    Compare deux fichiers .obj et calcule les distances
+    """
     
-    # S'assurer que les types sont corrects
-    vertices = np.array(vertices, dtype=np.float64)
-    faces = np.array(faces, dtype=np.int32)
+    # Charger les maillages
+    mesh1 = load_mesh(file1)
+    mesh2 = load_mesh(file2)
     
-    # CORRECTION : Retirer les dimensions supplémentaires
-    if vertices.ndim > 2:
-        print(f"⚠️ Correction de la forme des vertices: {vertices.shape} → ", end="")
-        vertices = vertices.squeeze()  # Retire les dimensions de taille 1
-        print(f"{vertices.shape}")
-    
-    # Vérifier que c'est bien (N, 3)
-    if vertices.ndim != 2 or vertices.shape[1] != 3:
-        print(f"❌ Forme incorrecte des vertices: {vertices.shape}")
+    if mesh1 is None or mesh2 is None:
+        print("Erreur: Impossible de charger les maillages")
         return
     
-    # Vérifier les dimensions
-    print(f"Debug - Vertices shape: {vertices.shape}, Faces shape: {faces.shape}")
-    print(f"Debug - Faces min: {faces.min()}, max: {faces.max()}")
-    
-    # Créer le mesh SANS traitement automatique
-    mesh = trimesh.Trimesh(vertices=vertices, 
-                          faces=faces, 
-                          process=False,
-                          validate=False)
-    
-    # Sauvegarder si demandé
-    if save_path:
-        try:
-            scene = trimesh.Scene(mesh)
-            png = scene.save_image(resolution=[1920, 1080])
-            with open(save_path, 'wb') as f:
-                f.write(png)
-            print(f"Modèle sauvegardé: {save_path}")
-        except Exception as e:
-            print(f"Impossible de sauvegarder: {e}")
-    
-    # Afficher le mesh
-    mesh.show(caption=title)
-    
-def visualize_3d_model_trimesh(vertices, faces, title="Modèle 3D", save_path=None):
-    """Visualise un modèle 3D avec trimesh en png, .jpeg"""
-    # Créer le mesh
-    mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-    
-    # Sauvegarder si demandé
-    if save_path:
-        scene = mesh.scene()
-        # Prendre une capture d'écran
-        png = scene.save_image(resolution=[1920, 1080])
-        with open(save_path, 'wb') as f:
-            f.write(png)
-    
-    print(f"Modèle sauvegardé: {save_path}")
+    hausdorff = hausdorff_distance(mesh1, mesh2)
 
-    ## Afficher le mesh
-    mesh.show(caption=title)  
-                        
-def prepare_for_visualization(encrypted_vertices, N):
+def distance_vertex_model(vertex, model) -> float:
+    distance = numpy.inf
+    for v in model:
+        d = numpy.linalg.norm(v - vertex)
+        if d < distance:
+            distance = d
+    return distance
+
+def directed_hausdorff(model1, model2) -> float:
+    hd = 0.0
+    for i, v in enumerate(model1):
+        print("vertex model1 : " + str(i))
+        d = distance_vertex_model(v, model2)
+        if d > hd:
+            hd = d
+    return hd
+
+def hausdorff_distance(mesh1, mesh2):
     """
-    Prépare les vertices chiffrés ou ceux qui ont de garnds coordonnées pour la visualisation. 
-    La fonction réduit la taille des valeurs chiffrés en gardant les caractéristiques"""
-    visual_vertices = []
-    for vertex in encrypted_vertices:
-        visual_vertex = []
-        for coord in vertex:
-            ## Réduire en gardant les caractéristiques
-            reduced = int(coord // (N // 10000))
-            visual_coord = (reduced % 4000) - 2000
-            visual_vertex.append(visual_coord)
-        visual_vertices.append(visual_vertex)
+    Calcule la distance de Hausdorff entre deux maillages
+    """
+    vertices1 = mesh1.vertices
+    vertices2 = mesh2.vertices
     
-    vertices_array = np.array(visual_vertices, dtype=float)
-    # Normaliser pour garder la forme du cube
-    max_val = np.max(np.abs(vertices_array))
-    if max_val > 0:
-        vertices_array = vertices_array / max_val * 2
+    # Distance de Hausdorff directionnelle de mesh1 vers mesh2
+    d_forward = directed_hausdorff(vertices1, vertices2)[0]
+    # Distance de Hausdorff directionnelle de mesh2 vers mesh1
+    d_backward = directed_hausdorff(vertices2, vertices1)[0]
     
-    return vertices_array
+    # La distance de Hausdorff est le maximum des deux
+    hausdorff_dist = max(d_forward, d_backward)
+    
+    return hausdorff_dist
