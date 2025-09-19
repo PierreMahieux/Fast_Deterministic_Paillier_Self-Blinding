@@ -2,6 +2,7 @@ import numpy as np
 import sys
 
 from datetime import datetime
+import time
 import os
 
 from src.utils import mesh_utils, util, paillier
@@ -28,7 +29,7 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(__file__)
 
     dataset_path = "./datasets/meshes/"
-    model_name = "casting.obj"
+    model_name = "tumored_kidney.obj"
     model_path = os.path.join(script_dir, dataset_path + model_name)
 
     model = mesh_utils.load_3d_model(model_path)
@@ -42,6 +43,12 @@ if __name__ == "__main__":
 
     result = {"config": config}
 
+    #génération des clés
+    encryption_keys = paillier.generate_keys(config["key_size"])
+    pub_key = encryption_keys["public"]
+    priv_key = encryption_keys["secret"]
+    N, g = pub_key
+
     # Preprocessing
     vertices_prep, prep_info = rrdh.preprocess_vertices(vertices, config["quantisation_factor"])
 
@@ -50,11 +57,6 @@ if __name__ == "__main__":
     (patches, patch_indices), (isolated_coords, isolated_indices) = rrdh.divide_into_patches(vertices_prep, faces)
     patch_info = rrdh.get_patch_info(patches, isolated_coords)
 
-    #génération des clés
-    encryption_keys = paillier.generate_keys(config["key-size"])
-    pub_key = encryption_keys["public"]
-    priv_key = encryption_keys["secret"]
-    N, g = pub_key
 
     # 3. CHIFFREMENT DES PATCHES
     print("\n3. Chiffrement des patches...")
@@ -84,7 +86,7 @@ if __name__ == "__main__":
     watermarked_encrypted_vertices = rrdh.recover_encrypted_model(
         watermarked_patches, patch_indices, encrypted_isolated, isolated_indices, n_vertices
     )
-    result["time_embedding"] = start_embedding - time.time()
+    result["time_embedding"] = time.time() - start_embedding
     
     # 6. EXTRACTION DANS LE DOMAINE CHIFFRÉ
     print("\n6. Extraction")
@@ -111,6 +113,7 @@ if __name__ == "__main__":
     )
     # Vertices restaurés déchiffrés
     restored_decrypted_vertices = rrdh.decrypt_complete_model(restored_encrypted_vertices, priv_key, pub_key)
+    # restored_decrypted_vertices = rrdh.decrypt_complete_model(encrypted_vertices, priv_key, pub_key)
     # Restauration compléte en appliquant l'inverse du preprocessing
     restored_clear = rrdh.inverse_preprocess_vertices(restored_decrypted_vertices, prep_info)
     
@@ -126,8 +129,8 @@ if __name__ == "__main__":
     # save_3d_model(vertices, faces, os.path.join(result_folder,"original.obj"))
     mesh_utils.save_3d_model(vertices_prep, faces, os.path.join(result_folder,"preprocessed.obj"))
     mesh_utils.save_3d_model(watermarked_clear, faces, os.path.join(result_folder,"watermarked_decrypted.obj"))
-    mesh_utils.save_3d_model(restored_clear, faces, os.path.join(result_folder,"restored_decrypted.obj"))
-    mesh_utils.save_3d_model(restored_decrypted_vertices, faces, os.path.join(result_folder,"restored_decrypted.obj"))
+    mesh_utils.save_3d_model(restored_clear, faces, os.path.join(result_folder,"restored_clear.obj"))
+    # mesh_utils.save_3d_model(restored_decrypted_vertices, faces, os.path.join(result_folder,"restored_decrypted.obj"))
     
     # # RÉSUMÉ DES RÉSULTATS
     # report_path = os.path.join(result_folder, "rapport.txt")

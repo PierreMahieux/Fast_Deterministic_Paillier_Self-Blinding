@@ -10,19 +10,22 @@ from src.utils import paillier, util, mesh_utils
 
 def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
     print("Run RRDH")
+    vertices = model["vertices"]
+    faces = model["faces"]
+    n_vertices = len(vertices)
 
     result = {"config": config}
 
     # Preprocessing
-    vertices_prep, prep_info = rrdh.preprocess_vertices(vertices, config["quantisation_factor"])
+    vertices_prep, prep_info = preprocess_vertices(vertices, config["quantisation_factor"])
 
     # 2. DIVISION EN PATCHES
     print("\n2. Division en patches...")
-    (patches, patch_indices), (isolated_coords, isolated_indices) = rrdh.divide_into_patches(vertices_prep, faces)
-    patch_info = rrdh.get_patch_info(patches, isolated_coords)
+    (patches, patch_indices), (isolated_coords, isolated_indices) = divide_into_patches(vertices_prep, faces)
+    patch_info = get_patch_info(patches, isolated_coords)
 
     #génération des clés
-    encryption_keys = paillier.generate_keys(config["key-size"])
+    encryption_keys = paillier.generate_keys(config["key_size"])
     pub_key = encryption_keys["public"]
     priv_key = encryption_keys["secret"]
     N, g = pub_key
@@ -30,10 +33,10 @@ def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
     # 3. CHIFFREMENT DES PATCHES
     print("\n3. Chiffrement des patches...")
     start_encryption = time.time()
-    encrypted_patches, r_values = rrdh.encrypt_patches(patches, pub_key)
-    encrypted_isolated = rrdh.encrypt_isolated_vertices(isolated_coords, pub_key) if isolated_coords else []
+    encrypted_patches, r_values = encrypt_patches(patches, pub_key)
+    encrypted_isolated = encrypt_isolated_vertices(isolated_coords, pub_key) if isolated_coords else []
     #recosntruction du modèle chiffré complet
-    encrypted_vertices = rrdh.recover_encrypted_model(
+    encrypted_vertices = recover_encrypted_model(
         encrypted_patches, patch_indices, encrypted_isolated, isolated_indices, n_vertices
     )
     result["time_encryption"] = time.time() - start_encryption
@@ -47,20 +50,20 @@ def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
     # 5. TATOUAGE DANS LE DOMAINE CHIFFRÉ
     print("\n5. Tatouage dans le domaine chiffré...")
     start_embedding = time.time()
-    watermarked_patches, nb_watermaked_bits = rrdh.embed_watermark_in_model(
+    watermarked_patches, nb_watermaked_bits = embed_watermark_in_model(
         encrypted_patches, watermark_original, N, config["quantisation_factor"]
     )
     
     # Reconstruction des vertices chiffrés tatoués
-    watermarked_encrypted_vertices = rrdh.recover_encrypted_model(
+    watermarked_encrypted_vertices = recover_encrypted_model(
         watermarked_patches, patch_indices, encrypted_isolated, isolated_indices, n_vertices
     )
-    result["time_embedding"] = start_embedding - time.time()
+    result["time_embedding"] = time.time() - start_embedding
     
     # 6. EXTRACTION DANS LE DOMAINE CHIFFRÉ
     print("\n6. Extraction")
     start_extraction = time.time()
-    extracted_watermark = rrdh.extract_watermark_from_model(
+    extracted_watermark = extract_watermark_from_model(
         watermarked_patches, N, 
         expected_length=watermark_length,
         k=config["quantisation_factor"]
@@ -75,32 +78,33 @@ def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
     # 7. RESTAURATION DANS LE DOMAINE CHIFFRÉ
     print("\n7. Restauration")
     
-    restored_encrypted_patches = rrdh.restore_encrypted_patches_from_watermarking(watermarked_patches, N, config["quantisation_factor"])
+    restored_encrypted_patches = restore_encrypted_patches_from_watermarking(watermarked_patches, N, config["quantisation_factor"])
     
     # Reconstruction des vertices chiffrés restaurés
-    restored_encrypted_vertices = rrdh.recover_encrypted_model(
+    restored_encrypted_vertices = recover_encrypted_model(
         restored_encrypted_patches, patch_indices, encrypted_isolated, isolated_indices, n_vertices
     )
     # Vertices restaurés déchiffrés
-    restored_decrypted_vertices = rrdh.decrypt_complete_model(restored_encrypted_vertices, priv_key, pub_key)
+    restored_decrypted_vertices = decrypt_complete_model(restored_encrypted_vertices, priv_key, pub_key)
     # Restauration compléte en appliquant l'inverse du preprocessing
-    restored_clear = rrdh.inverse_preprocess_vertices(restored_decrypted_vertices, prep_info)
+    restored_clear = inverse_preprocess_vertices(restored_decrypted_vertices, prep_info)
     
     # 8. Modèle déchiffré tatoué
     print("\n8. Modèle déchiffré tatoué...")
     
-    watermarked_decrypted_vertices = rrdh.decrypt_complete_model(watermarked_encrypted_vertices, priv_key, pub_key)
+    watermarked_decrypted_vertices = decrypt_complete_model(watermarked_encrypted_vertices, priv_key, pub_key)
     # Inverse preprocessing
-    watermarked_clear = rrdh.inverse_preprocess_vertices(watermarked_decrypted_vertices, prep_info)
+    watermarked_clear = inverse_preprocess_vertices(watermarked_decrypted_vertices, prep_info)
 
 
     # Sauvegarder les modèles
     # save_3d_model(vertices, faces, os.path.join(result_folder,"original.obj"))
-    mesh_utils.save_3d_model(vertices_prep, faces, os.path.join(result_folder,"preprocessed.obj"))
-    mesh_utils.save_3d_model(watermarked_clear, faces, os.path.join(result_folder,"watermarked_decrypted.obj"))
-    mesh_utils.save_3d_model(restored_clear, faces, os.path.join(result_folder,"restored_decrypted.obj"))
-    mesh_utils.save_3d_model(restored_decrypted_vertices, faces, os.path.join(result_folder,"restored_decrypted.obj"))
+    mesh_utils.save_3d_model(vertices_prep, faces, os.path.join(config["result_folder"],"preprocessed.obj"))
+    mesh_utils.save_3d_model(watermarked_clear, faces, os.path.join(config["result_folder"],"watermarked_decrypted.obj"))
+    mesh_utils.save_3d_model(restored_clear, faces, os.path.join(config["result_folder"],"restored_decrypted.obj"))
+    # mesh_utils.save_3d_model(restored_decrypted_vertices, faces, os.path.join(config["result_folder"],"restored_decrypted.obj"))
     
+    # util.write_report(result)
     return result
 
 def preprocess_vertices(vertices, k=4):
@@ -118,15 +122,19 @@ def preprocess_vertices(vertices, k=4):
     """
     preprocessing_info = {'k': k, 'normalize': False}
     
-    # Normaliser si les valeurs sont hors de [-1, 1]
-    if np.any(vertices < -1) or np.any(vertices > 1):
-        vertices_work, norm_params = _normalize_vertices(vertices)
-        preprocessing_info['normalization_params'] = norm_params
-        preprocessing_info['normalize'] = True
-    else:
-        vertices_positive = _quantisation(vertices, k)
+    # # Normaliser si les valeurs sont hors de [-1, 1]
+    # if np.any(vertices < -1) or np.any(vertices > 1):
+    #     vertices_positive, norm_params = _normalize_vertices(vertices)
+    #     preprocessing_info['normalization_params'] = norm_params
+    #     preprocessing_info['normalize'] = True
+    # else:
+    #     vertices_positive = _quantisation(vertices, k)
 
-    return vertices_positive, preprocessing_info
+    vertices_positive, norm_params = _normalize_vertices(vertices)
+    preprocessing_info['normalization_params'] = norm_params
+    preprocessing_info['normalize'] = True
+    vertices_quantified = _quantisation(vertices_positive, k)
+    return vertices_quantified, preprocessing_info
 
 def _normalize_vertices(vertices):
     """
@@ -355,7 +363,7 @@ def encrypt_patch(patch, pub_key, r=None):
     
     # Générer r si non fourni
     if r is None:
-        r = get_r(N)
+        r = paillier.generate_r(N)
     
     # Chiffrer chaque vertex du patch
     encrypted_patch = []
@@ -481,7 +489,7 @@ def embed_watermark_in_patch(encrypted_patch, watermark_bits, N, k=4):
     
     # Calculer les directions originales
     directions_encrypted = compute_all_directions_encrypted(encrypted_patch, N)
-    directions = determine_directions_from_encrypted(directions_encrypted, N, Nl)
+    directions = determine_directions_from_encrypted(directions_encrypted, N, Nl, k)
     
     # Tatouer chaque direction
     watermarked_encrypted_patch = encrypted_patch
@@ -1032,7 +1040,7 @@ def compute_all_directions_encrypted(encrypted_patch, N):
     return directions_encrypted
 
 
-def determine_directions_from_encrypted(directions_encrypted, N, Nl):
+def determine_directions_from_encrypted(directions_encrypted, N, Nl, k):
     """
     Détermine les directions en clair à partir des directions chiffrées.
     
@@ -1044,7 +1052,7 @@ def determine_directions_from_encrypted(directions_encrypted, N, Nl):
     Returns:
         list: [d_x, d_y, d_z] directions en clair
     """
-    F_Nl = calculate_F_Nl(Nl)
+    F_Nl = calculate_F_Nl(Nl, k)
     directions = []
     
     for Cd in directions_encrypted:
