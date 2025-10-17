@@ -6,30 +6,18 @@ import time
 import os
 
 from src.utils import mesh_utils, util, paillier
-from src.robust_reversible_data_hiding import rrdh
-
-# from preprocessing import preprocess_vertices, inverse_preprocess_vertices
-# from patch_division import divide_into_patches, get_patch_info
-# from encryption import (
-#     generate_keys_for_rrdh, encrypt_patches,encrypt_isolated_vertices
-# )
-# from watermarking import embed_watermark_in_model
-# from extraction_restoration_ED import (
-#     extract_watermark_from_model, restore_encrypted_patches_from_watermarking,
-#     reconstruct_encrypted_model, decrypt_complete_model
-# )
-# from compare_visualization import compare_meshes
-# from watermarking import calculate_ber
+from src.improved_robust_reversible_data_hiding import improved_rrdh
 
 KEY_SIZE = 256
 QUANTISATION_FACTOR = 4
+MESSAGE_LENGTH = 256
 
 
 if __name__ == "__main__":
     script_dir = os.path.dirname(__file__)
 
     dataset_path = "./datasets/meshes/"
-    model_name = "tumored_kidney.obj"
+    model_name = "casting.obj"
     model_path = os.path.join(script_dir, dataset_path + model_name)
 
     model = mesh_utils.load_3d_model(model_path)
@@ -37,132 +25,85 @@ if __name__ == "__main__":
     vertices = model["vertices"]
     faces = model["faces"]
     n_vertices = len(vertices)
-    result_folder = os.path.join(script_dir, f"./results/rrdh/{model_name.split(".")[0]}/")
-
-    config = {"key_size": KEY_SIZE, "quantisation_factor": QUANTISATION_FACTOR, "result_folder": result_folder, "model_path": model_path, "model_name": model_name}
-
-    result = {"config": config}
+    result_folder = os.path.join(script_dir, f"./results/improved_rrdh/{model_name.split(".")[0]}/")
 
     #génération des clés
-    encryption_keys = paillier.generate_keys(config["key_size"])
+    encryption_keys = paillier.generate_keys(KEY_SIZE)
     pub_key = encryption_keys["public"]
     priv_key = encryption_keys["secret"]
     N, g = pub_key
 
+    config = {"key_size": KEY_SIZE, "quantisation_factor": QUANTISATION_FACTOR, "result_folder": result_folder, "message_length": MESSAGE_LENGTH, "model_path": model_path, "model_name": model_name, "encryption_keys": encryption_keys}
+
+    result = {"config": config}
+
     # Preprocessing
-    vertices_prep, prep_info = rrdh.preprocess_vertices(vertices, config["quantisation_factor"])
+    print("Pre-processing")
+    vertices_prep, prep_info = improved_rrdh.preprocess_vertices(vertices, config["quantisation_factor"])
 
     # 2. DIVISION EN PATCHES
-    print("\n2. Division en patches...")
-    (patches, patch_indices), (isolated_coords, isolated_indices) = rrdh.divide_into_patches(vertices_prep, faces)
-    patch_info = rrdh.get_patch_info(patches, isolated_coords)
+    (patches, patch_indices), (isolated_coords, isolated_indices) = improved_rrdh.divide_into_patches(vertices_prep, faces)
+    patch_info = improved_rrdh.get_patch_info(patches, isolated_coords)
 
 
     # 3. CHIFFREMENT DES PATCHES
-    print("\n3. Chiffrement des patches...")
+    print("Encryption")
     start_encryption = time.time()
-    encrypted_patches, r_values = rrdh.encrypt_patches(patches, pub_key)
-    encrypted_isolated = rrdh.encrypt_isolated_vertices(isolated_coords, pub_key) if isolated_coords else []
+    encrypted_patches, r_values = improved_rrdh.encrypt_patches(patches, pub_key)
+    encrypted_isolated = improved_rrdh.encrypt_isolated_vertices(isolated_coords, pub_key) if isolated_coords else []
     #recosntruction du modèle chiffré complet
-    encrypted_vertices = rrdh.recover_encrypted_model(
+    encrypted_vertices = improved_rrdh.recover_encrypted_model(
         encrypted_patches, patch_indices, encrypted_isolated, isolated_indices, n_vertices
     )
+    # encrypted_vertices = improved_rrdh.encrypt_vertices(vertices_prep, pub_key)
+
     result["time_encryption"] = time.time() - start_encryption
     
     # 4. GÉNÉRATION DU WATERMARK
-    print("\n4. Génération du watermark...")
-    watermark_length = patch_info['n_patches'] * 3
-    watermark_original = [np.random.randint(0, 2) for _ in range(watermark_length)]
+    
+    # watermark = [np.random.randint(0, 2) for _ in range(config["message_length"])]
+    watermark = [1 for _ in range(config["message_length"])]
 
     
     # 5. TATOUAGE DANS LE DOMAINE CHIFFRÉ
-    print("\n5. Tatouage dans le domaine chiffré...")
+    print("Embedding")
     start_embedding = time.time()
-    watermarked_patches, nb_watermaked_bits = rrdh.embed_watermark_in_model(
-        encrypted_patches, watermark_original, N, config["quantisation_factor"]
-    )
-    
-    # Reconstruction des vertices chiffrés tatoués
-    watermarked_encrypted_vertices = rrdh.recover_encrypted_model(
-        watermarked_patches, patch_indices, encrypted_isolated, isolated_indices, n_vertices
-    )
+    watermarked_encrypted_vertices = improved_rrdh.embed(encrypted_vertices, patch_indices, watermark, pub_key, config)
     result["time_embedding"] = time.time() - start_embedding
+
+    # Restauration et sauvegarde du modèle tatoué déchiffré
+    watermarked_decrypted_vertices = np.array(watermarked_encrypted_vertices.copy())
+    for v_i in range(len(watermarked_decrypted_vertices)):
+        for c_i in range(3):
+            watermarked_decrypted_vertices[v_i][c_i] = int(paillier.decrypt_CRT(watermarked_encrypted_vertices[v_i][c_i], priv_key, pub_key))
+    watermarked_restored = improved_rrdh.inverse_preprocess_vertices(watermarked_decrypted_vertices, prep_info)
+    mesh_utils.save_3d_model(watermarked_restored, faces, os.path.join(result_folder,"watermarked_restored.obj"))
+
     
     # 6. EXTRACTION DANS LE DOMAINE CHIFFRÉ
-    print("\n6. Extraction")
+    print("Extraction")
     start_extraction = time.time()
-    extracted_watermark = rrdh.extract_watermark_from_model(
-        watermarked_patches, N, 
-        expected_length=watermark_length,
-        k=config["quantisation_factor"]
-    )
+    (watermarked_patches, watermarked_patch_indices), (isolated_coords, isolated_indices) = improved_rrdh.divide_into_patches(np.array(watermarked_encrypted_vertices), faces)
+
+    extracted_watermark = improved_rrdh.extract(watermarked_encrypted_vertices, watermarked_patch_indices, encryption_keys, config)
     result["time_extraction"] = time.time() - start_extraction
+
+    # Restoration
+    print("Restoration")
+    start_restoration = time.time()
+    restored_encrypted_vertices = improved_rrdh.restore_encrypted_vertices(watermarked_encrypted_vertices.copy(), extracted_watermark, watermarked_patch_indices, encryption_keys["public"], config)
+    result["time_restoration"] = time.time() - start_restoration
+
+    restored_decrypted_vertices = np.array(restored_encrypted_vertices.copy())
+    for v_i in range(len(restored_decrypted_vertices)):
+        for c_i in range(3):
+            restored_decrypted_vertices[v_i][c_i] = int(paillier.decrypt_CRT(restored_encrypted_vertices[v_i][c_i], priv_key, pub_key))
+    restored_decrypted_vertices = improved_rrdh.inverse_preprocess_vertices(restored_decrypted_vertices, prep_info)
+
+    mesh_utils.save_3d_model(restored_decrypted_vertices, faces, os.path.join(result_folder,"fully_restored.obj"))
+
     # Calcul du BER
-    ber = util.compare_bits(watermark_original, extracted_watermark)
-    result["BER"] = ber
-
-    
-    # 7. RESTAURATION DANS LE DOMAINE CHIFFRÉ
-    print("\n7. Restauration")
-    
-    restored_encrypted_patches = rrdh.restore_encrypted_patches_from_watermarking(watermarked_patches, N, config["quantisation_factor"])
-    
-    # Reconstruction des vertices chiffrés restaurés
-    restored_encrypted_vertices = rrdh.recover_encrypted_model(
-        restored_encrypted_patches, patch_indices, encrypted_isolated, isolated_indices, n_vertices
-    )
-    # Vertices restaurés déchiffrés
-    restored_decrypted_vertices = rrdh.decrypt_complete_model(restored_encrypted_vertices, priv_key, pub_key)
-    # restored_decrypted_vertices = rrdh.decrypt_complete_model(encrypted_vertices, priv_key, pub_key)
-    # Restauration compléte en appliquant l'inverse du preprocessing
-    restored_clear = rrdh.inverse_preprocess_vertices(restored_decrypted_vertices, prep_info)
-    
-    # 8. Modèle déchiffré tatoué
-    print("\n8. Modèle déchiffré tatoué...")
-    
-    watermarked_decrypted_vertices = rrdh.decrypt_complete_model(watermarked_encrypted_vertices, priv_key, pub_key)
-    # Inverse preprocessing
-    watermarked_clear = rrdh.inverse_preprocess_vertices(watermarked_decrypted_vertices, prep_info)
-
-
-    # Sauvegarder les modèles
-    # save_3d_model(vertices, faces, os.path.join(result_folder,"original.obj"))
-    mesh_utils.save_3d_model(vertices_prep, faces, os.path.join(result_folder,"preprocessed.obj"))
-    mesh_utils.save_3d_model(watermarked_clear, faces, os.path.join(result_folder,"watermarked_decrypted.obj"))
-    mesh_utils.save_3d_model(restored_clear, faces, os.path.join(result_folder,"restored_clear.obj"))
-    # mesh_utils.save_3d_model(restored_decrypted_vertices, faces, os.path.join(result_folder,"restored_decrypted.obj"))
-    
-    # # RÉSUMÉ DES RÉSULTATS
-    # report_path = os.path.join(result_folder, "rapport.txt")
-
-    # f = open(report_path, 'w', encoding='utf-8')
-    # f.write("RAPPORT RRDH-ED - TATOUAGE ROBUSTE ET RÉVERSIBLE\n")
-    # f.write(f"Modèle: {os.path.basename(obj_filename)}\n")
-    # f.write(f"Nombre de vertices: {n_vertices}\n")
-    # f.write(f"Nombre de patches: {patch_info['n_patches']}, patch min: {patch_info['min_size']}, patch max: {patch_info['max_size']}\n")
-    # f.write(f"keysize: {N.bit_length()}, g = N + 1: {g == N + 1}\n")
-    # f.write(f"BER: {ber:.4f}\n")
-    # f.write("\nDistances de Hausdorff:\n")
-    
-    # #Redirection temporaire de stdout
-    # original_path = os.path.join(result_folder,"original.obj")
-    # preprocess_path = os.path.join(result_folder,"preprocessed.obj")
-    # watermarked_path = os.path.join(result_folder,"watermarked_decrypted.obj")
-    # restored_path = os.path.join(result_folder,"restored_decrypted.obj")
-    # restored_prep_path = os.path.join(result_folder,"restored_decrypted_prep.obj")
-    # import sys
-    # sys_stdout = sys.stdout
-    # sys.stdout = f
-    # print("1. Comparaison Preprocessed vs Watermarked:")
-    # compare_meshes(preprocess_path, watermarked_path)
-    # print("\n2. Comparaison Preprocessed vs Restored Preprocessed:")
-    # compare_meshes(preprocess_path, restored_prep_path)
-    # print("\n3. Comparaison Original vs Restored:")
-    # compare_meshes(original_path, restored_path)
-
-    # Restauration de stdout
-    # sys.stdout = sys_stdout
-
+    result["BER"] = util.compare_bits(watermark, extracted_watermark)
     util.write_report(result)
 
     print("fini")

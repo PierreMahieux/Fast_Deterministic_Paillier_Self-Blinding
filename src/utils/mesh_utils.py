@@ -1,7 +1,6 @@
 import os
 import numpy as np
 # import matplotlib.pyplot as plt
-# import trimesh
 # from mpl_toolkits.mplot3d import Axes3D
 import time,random
 from datetime import datetime

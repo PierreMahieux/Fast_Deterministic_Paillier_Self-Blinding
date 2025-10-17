@@ -6,6 +6,29 @@ import numpy as np
 
 from src.utils import paillier, util, mesh_utils
 
+def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
+    print("Run RDH")
+    result = {"config" : config}
+
+    result_preprocess = preprocess(model, encryption_keys, config)
+    result = result | result_preprocess
+
+    result_embed = embed(result_preprocess["encrypted_vertices"], watermarks, encryption_keys["public"], config)
+    embedded_vertices = result_embed["embedded_encrypted_model"]
+    mesh_utils.save_3d_model(result_preprocess["quantified_model"], model["faces"], os.path.join(config["result_folder"], f"quantified_{config["model_name"]}"))
+    result = result | result_embed
+
+    result_extract = extract(embedded_vertices, encryption_keys, config["quantisation_factor"], (len(watermarks[0]), len(watermarks[1])))
+    result = result | result_extract
+
+    recovered_mesh = recover_mesh(result_extract["decrypted_vertices"], encryption_keys["public"], config["quantisation_factor"])
+    mesh_utils.save_3d_model(recovered_mesh, model["faces"], os.path.join(config["result_folder"], f"recovered_{config["model_name"]}"))
+
+    result["BER_histogram_shifting"] = util.compare_bits(watermarks[0], result["histogram_shifting_watermark"])
+    result["BER_self_blinding"] = util.compare_bits(watermarks[1], result["self_blinding_watermark"])
+
+    return result
+
 def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: dict) -> dict:
     print("Pre-processing")
     vertices = model["vertices"]
