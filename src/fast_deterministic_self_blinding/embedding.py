@@ -39,7 +39,7 @@ def _qim_embedding(vertices: np.array, watermark: list, qim_step: int, public_en
 
     for i in range(len(watermark)):
         if watermark[i] == 1:
-            embedded_vertices[i//3][i%3] = powmod(embedded_vertices[i//3][i%3] * encrypted_qim_step, 1, public_encryption_key[0]**2)
+            embedded_vertices[i//3][i%3] = gmpy2.powmod(embedded_vertices[i//3][i%3] * encrypted_qim_step, 1, public_encryption_key[0]**2)
 
     return embedded_vertices
 
