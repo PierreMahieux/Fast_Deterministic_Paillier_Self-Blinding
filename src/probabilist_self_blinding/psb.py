@@ -2,21 +2,20 @@ import os
 import time
 import hashlib
 import numpy as np
-import gmpy2
 
 from src.utils import paillier, util, mesh_utils
-from src.fast_deterministic_self_blinding.preprocessing import preprocess
-from src.fast_deterministic_self_blinding.embedding import embed
-from src.fast_deterministic_self_blinding.extracting import extract
+from src.probabilist_self_blinding.preprocessing import preprocess
+from src.probabilist_self_blinding.embedding import embed
+from src.probabilist_self_blinding.extracting import extract
 
 def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
     print("Run FDSB")
     signing_keys = util.genereate_signing_keys()
     keys = {"encryption": encryption_keys, "signing": signing_keys}
     
-    result = {"config": config, "watermark_embedded": watermarks[0]}
+    result = {"config": config}
     
-    encrypted_vertices, pre_marked_vertices, result_preprocess = preprocessing(model["vertices"], encryption_keys, config)
+    encrypted_vertices, result_preprocess = preprocessing(model["vertices"], encryption_keys, config)
     result = result | result_preprocess
 
     signed_vertices, result_embedding = embedding(encrypted_vertices, watermarks[0], {"encryption": encryption_keys, "signing": signing_keys}, config)
@@ -24,20 +23,12 @@ def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
 
     decrypted_vertices, result_extracting = extracting(signed_vertices, {"encryption": encryption_keys, "signing": signing_keys}, config["quantisation_factor"], config["message_length"], config["signature_length"], config["qim_step"])
     result = result | result_extracting
-    del result["extracted_watermark"]
 
     recovered_mesh = recover_mesh(decrypted_vertices, encryption_keys["public"], config["quantisation_factor"])
     mesh_utils.save_3d_model(recovered_mesh, model["faces"], os.path.join(config["result_folder"], f"recovered_{config["model_name"]}"))
 
-    if config["save_encrypted_file"]:
-        for i in range(len(encrypted_vertices)):
-            for j in range(3):
-                encrypted_vertices[i][j] = int(gmpy2.digits(encrypted_vertices[i][j])) % (10**config["quantisation_factor"])
-        
-        mesh_utils.save_3d_model(encrypted_vertices, model["faces"], os.path.join(config["result_folder"], f"encrypted_{config["model_name"]}"))
+    result["BER_qim"] = util.compare_bits(watermarks[0], result["extracted_watermark"])
 
-    result["BER_qim"] = np.mean(np.array(watermarks[0]) != result_extracting["extracted_watermark"])
-    print(f"BER = {result["BER_qim"]}")
     return result
 
 
@@ -50,8 +41,8 @@ def recover_mesh(vertices: np.array, public_key: tuple, quantisation_factor: int
     for i_v in range(len(vertices)):
         for i_c in range(len(vertices[i_v])):
             if vertices[i_v][i_c] > N // 2:
-                vertices[i_v][i_c] -= N #TODO : si ajout N//4 au preprocess pas besoin de -N (tout est positif) par contre faire -N//4
-            vertices[i_v][i_c] = (vertices[i_v][i_c]) / (10**quantisation_factor)
+                vertices[i_v][i_c] -= N
+            vertices[i_v][i_c] = vertices[i_v][i_c] / (10**quantisation_factor)
     return vertices.astype(float)
 
 def preprocessing(vertices: np.array, encryption_keys: dict, config: dict) -> (np.array, dict):

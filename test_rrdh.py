@@ -1,6 +1,6 @@
 import numpy as np
 import sys
-
+import gmpy2
 from datetime import datetime
 from glob import glob
 import time
@@ -11,7 +11,7 @@ from src.robust_reversible_data_hiding import rrdh
 
 from gmpy2 import mpz, powmod, invert, gcd, mpz_random, random_state, mpz_urandomb, next_prime
 
-KEY_SIZE = 256
+KEY_SIZE = 512
 QUANTISATION_FACTOR = 4
 MESSAGE_LENGTH = 256
 
@@ -19,7 +19,7 @@ def complete_test():
     script_dir = os.path.dirname(__file__)
 
     dataset_path = "./datasets/meshes/"
-    model_name = "cow.obj"
+    model_name = "casting.obj"
     model_path = os.path.join(script_dir, dataset_path + model_name)
 
     model = mesh_utils.load_3d_model(model_path)
@@ -58,6 +58,11 @@ def complete_test():
     encrypted_vertices = rrdh.encrypt_vertices(vertices_prep, pub_key)
     result["time_encryption"] = time.time() - start_encryption
     
+    for i in range(len(encrypted_vertices)):
+        for j in range(3):
+            encrypted_vertices[i][j] = int(gmpy2.digits(encrypted_vertices[i][j])) % (10**config["quantisation_factor"])
+    mesh_utils.save_3d_model(encrypted_vertices, model["faces"], os.path.join(result_folder, f"encrypted_{model_name}"))
+
     # Embedding  
     print("Embedding")
     start_embedding = time.time()
@@ -119,46 +124,48 @@ def compute_max_direction_from_patches(patch_indices, vertices):
 if __name__ == "__main__":
     script_dir = os.path.dirname(__file__)
 
-    dataset_path = "./datasets/meshes/"
-    meshes_list = glob(dataset_path + "*.obj")
-    # meshes_list = [dataset_path + "casting.obj"]
+    complete_test()
 
-    for model_path in meshes_list:
-        model = mesh_utils.load_3d_model(os.path.join(script_dir, model_path))
-        model_name = model_path.split('/')[-1]
+    # dataset_path = "./datasets/meshes/"
+    # meshes_list = glob(dataset_path + "*.obj")
+    # # meshes_list = [dataset_path + "casting.obj"]
+
+    # for model_path in meshes_list:
+    #     model = mesh_utils.load_3d_model(os.path.join(script_dir, model_path))
+    #     model_name = model_path.split('/')[-1]
         
-        vertices = model["vertices"]
-        faces = model["faces"]
-        n_vertices = len(vertices)
-        result_folder = os.path.join(script_dir, f"./results/rrdh/{model_name.split(".")[0]}/")
+    #     vertices = model["vertices"]
+    #     faces = model["faces"]
+    #     n_vertices = len(vertices)
+    #     result_folder = os.path.join(script_dir, f"./results/rrdh/{model_name.split(".")[0]}/")
 
-        config = {"key_size": KEY_SIZE, "quantisation_factor": QUANTISATION_FACTOR, "message_length": MESSAGE_LENGTH, "result_folder": result_folder, "model_path": model_path, "model_name": model_name}
+    #     config = {"key_size": KEY_SIZE, "quantisation_factor": QUANTISATION_FACTOR, "message_length": MESSAGE_LENGTH, "result_folder": result_folder, "model_path": model_path, "model_name": model_name}
 
-        #Patch division
-        (patches, patch_indices), (isolated_coords, isolated_indices) = rrdh.divide_into_patches(vertices, faces)
-        patch_info = rrdh.get_patch_info(patches, isolated_coords)
+    #     #Patch division
+    #     (patches, patch_indices), (isolated_coords, isolated_indices) = rrdh.divide_into_patches(vertices, faces)
+    #     patch_info = rrdh.get_patch_info(patches, isolated_coords)
 
-        list_maximum_directions = compute_max_direction_from_patches(patch_indices, vertices)
+    #     list_maximum_directions = compute_max_direction_from_patches(patch_indices, vertices)
 
-        list_patches_size = set(len(p) for p in patch_indices)
-        list_F_Nl = []
-        list_T_Nl = []
-        list_F_Nl_T_Nl = []
-        list_2F_Nl_T_Nl = []
-        for patch in patch_indices:
-            Nl = len(patch)
-            F_Nl = 1.925*(Nl - 1)**3 - 60.6*(Nl - 1)**2 + 528*(Nl - 1) - 609
-            T_Nl = 50 * (Nl - 1)
-            list_F_Nl.append(F_Nl)
-            list_T_Nl.append(T_Nl)
-            list_F_Nl_T_Nl.append(F_Nl + T_Nl)
-            list_2F_Nl_T_Nl.append(2*F_Nl + T_Nl)
+    #     list_patches_size = set(len(p) for p in patch_indices)
+    #     list_F_Nl = []
+    #     list_T_Nl = []
+    #     list_F_Nl_T_Nl = []
+    #     list_2F_Nl_T_Nl = []
+    #     for patch in patch_indices:
+    #         Nl = len(patch)
+    #         F_Nl = 1.925*(Nl - 1)**3 - 60.6*(Nl - 1)**2 + 528*(Nl - 1) - 609
+    #         T_Nl = 50 * (Nl - 1)
+    #         list_F_Nl.append(F_Nl)
+    #         list_T_Nl.append(T_Nl)
+    #         list_F_Nl_T_Nl.append(F_Nl + T_Nl)
+    #         list_2F_Nl_T_Nl.append(2*F_Nl + T_Nl)
 
-        results = {"mean_F_Nl": np.mean(list_F_Nl), "mean_T_Nl": np.mean(list_T_Nl), "mean_F_Nl_T_Nl": np.mean(list_F_Nl_T_Nl), "mean_2F_Nl_T_Nl": np.mean(list_2F_Nl_T_Nl), "std_F_Nl": np.std(list_F_Nl), "std_T_Nl": np.std(list_T_Nl), "std_F_Nl_T_Nl": np.std(list_F_Nl_T_Nl), "std_2F_Nl_T_Nl": np.std(list_2F_Nl_T_Nl),}
+    #     results = {"mean_F_Nl": np.mean(list_F_Nl), "mean_T_Nl": np.mean(list_T_Nl), "mean_F_Nl_T_Nl": np.mean(list_F_Nl_T_Nl), "mean_2F_Nl_T_Nl": np.mean(list_2F_Nl_T_Nl), "std_F_Nl": np.std(list_F_Nl), "std_T_Nl": np.std(list_T_Nl), "std_F_Nl_T_Nl": np.std(list_F_Nl_T_Nl), "std_2F_Nl_T_Nl": np.std(list_2F_Nl_T_Nl),}
 
-        filename = os.path.join(config["result_folder"], "report.txt")
-        with open(filename, 'a') as file:
-            for key, value in results.items():
-                file.write(f"\"{key}\": {value},\n")
+    #     filename = os.path.join(config["result_folder"], "report.txt")
+    #     with open(filename, 'a') as file:
+    #         for key, value in results.items():
+    #             file.write(f"\"{key}\": {value},\n")
 
     print("fini")

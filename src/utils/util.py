@@ -59,10 +59,15 @@ def write_report(results: dict) -> None:
     try:
         os.makedirs(os.path.dirname(results["config"]["result_folder"]), exist_ok=True)
         filename = os.path.join(results["config"]["result_folder"], "report.txt")
+
+        results_json = json.dumps(results)
+
         with open(filename, 'w') as file:
-            for key, value in results.items():
-                # if "model" not in key and "signature" not in key and "watermark" not in key and "blocks" not in key and "keys" not in key:
-                file.write(f"\"{key}\": {value},\n")
+            json.dump(results, file, indent=4, sort_keys=True)
+            # file.write("{\n")
+            # for key, value in results.items():
+            #     file.write(f"\"{key.replace("'", "\"")}\": {value.replace("'", "\"")},\n")
+            # file.write("\n}")
         
         print(f"Rapport sauvegardé dans {filename}")
     except Exception as e:

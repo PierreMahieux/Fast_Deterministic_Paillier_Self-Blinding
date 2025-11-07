@@ -35,6 +35,8 @@ if __name__ == "__main__":
     encrypted_blocks_data = hcdh.encrypt_all_blocks(result_preprocess)
     result["time_encryption"] = time.time() - start_encryption
 
+    encrypted_vertices = hcdh.reconstruct_watermarked_vertices(encrypted_blocks_data)
+    mesh_utils.save_3d_model(encrypted_vertices, model["faces"], os.path.join(result_folder, f"encrypted_{model_name}"))
 
     start_embedding = time.time()
     alpha = params['alpha']
@@ -51,6 +53,8 @@ if __name__ == "__main__":
     for i in range(config["number_messages"]):
         result[f"ber_{i}"] = util.compare_bits(messages[i], extracted_messages[i])
         print(result[f"ber_{i}"])
+
+    result["config"] = config
 
     util.write_report(result)
 

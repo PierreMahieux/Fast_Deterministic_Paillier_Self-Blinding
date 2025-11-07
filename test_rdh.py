@@ -30,12 +30,10 @@ if __name__ == "__main__":
 
     config = {"key_size": KEY_SIZE, "quantisation_factor": QUANTISATION_FACTOR, "result_folder": result_folder, "model_path": model_path, "model_name": model_name}
 
-    result_preprocess = rdh.preprocess(model, encryption_keys, config)
+    encrypted_vertices, result_preprocess = rdh.preprocess(model, encryption_keys, config)
     result = result | result_preprocess
 
-    result_embed = rdh.embed(result_preprocess["encrypted_vertices"], watermarks, encryption_keys["public"], config)
-    embedded_vertices = result_embed["embedded_encrypted_model"]
-    mesh_utils.save_3d_model(result_preprocess["quantified_model"], model["faces"], os.path.join(config["result_folder"], f"quantified_{config["model_name"]}"))
+    embedded_vertices, result_embed = rdh.embed(encrypted_vertices, watermarks, encryption_keys["public"], config)
     result = result | result_embed
 
     result_extract = rdh.extract(embedded_vertices, encryption_keys, config["quantisation_factor"], (len(watermarks[0]), len(watermarks[1])))

@@ -264,3 +264,125 @@ def _encrypt_block(watermarkable_block, k, pub_key):
     encrypted = paillier.encrypt(k_int, pub_key)
     
     return encrypted
+
+def reconstruct_watermarked_vertices(encrypted_blocks_data):
+    """
+    Reconstruit les vertices à partir des blocs tatoués chiffrés
+    
+    encrypted_blocks_data: dictionnaire contenant les blocs (potentiellement tatoués)
+    
+    Retourne: vertices chiffrés tatoués
+    """
+    b = encrypted_blocks_data['parameters']['b']
+    k = encrypted_blocks_data['parameters']['k']
+    n_vertices_original = encrypted_blocks_data['n_vertices_original']
+    encrypted_blocks = encrypted_blocks_data['encrypted_blocks']
+    
+    # Taille attendue des blocs : 2k+1 bits
+    expected_block_size = 2 * k + 1
+    
+    # Reconstruire chaque bloc
+    all_vertices = []
+    
+    for block_info in encrypted_blocks:
+        # Utiliser le bloc tatoué s'il existe, sinon le bloc original
+        if 'watermarked_flagged_encrypted_block' in block_info:
+            block_to_use = block_info['watermarked_flagged_encrypted_block']
+        else:
+            block_to_use = block_info['encrypted_block']
+        
+        # Si c'est un entier, le convertir en bits avec la bonne taille
+        if isinstance(block_to_use, (int, type(block_to_use))):
+            # Convertir en bits avec padding pour avoir exactement 2k+1 bits
+            block_bits = util.int_to_bits(block_to_use, expected_block_size)
+        else:
+            block_bits = block_to_use
+        
+        # Vérifier et ajuster la taille si nécessaire
+        if len(block_bits) < expected_block_size:
+            # Ajouter des zéros au début (bits de poids fort)
+            padding = [0] * (expected_block_size - len(block_bits))
+            block_bits = padding + block_bits
+        elif len(block_bits) > expected_block_size:
+            # Tronquer (ne devrait pas arriver)
+            block_bits = block_bits[-expected_block_size:]
+        
+        # Reconstruire les vertices du bloc
+        block_vertices = reconstruct_vertices_from_block(
+            block_bits,
+            block_info['metadata'],
+            b
+        )
+        
+        all_vertices.extend(block_vertices)
+    
+    # Enlever le padding
+    watermarked_vertices = np.array(all_vertices[:n_vertices_original])
+    
+    return watermarked_vertices
+
+def reconstruct_vertices_from_block(block, metadata, b):
+    """
+    Reconstruit les vertices à partir d'un bloc et des métadonnées
+    
+    block: liste de bits de taille 69b
+    metadata: liste des (signe, exposant) pour chaque coordonnée
+    b: nombre de vertices dans le bloc
+    
+    Retourne: liste de vertices reconstruits
+    """
+    # Vérifier les tailles
+    assert len(block) == 69 * b, f"Block size should be {69*b}, got {len(block)}"
+    assert len(metadata) == 3 * b, f"Metadata size should be {3*b}, got {len(metadata)}"
+    
+    # Initialiser un array numpy vide pour les mantisses
+    mantisses = np.zeros((3 * b, 23), dtype=int)
+    
+    # Pour chaque position de bit
+    for bit_position in range(23):
+        # Pour chaque vertex
+        for vertex_idx in range(b):
+            # Pour chaque coordonnée (x, y, z)
+            for coord_idx in range(3):
+                mantisse_idx = vertex_idx * 3 + coord_idx
+                block_idx = bit_position * 3 * b + vertex_idx * 3 + coord_idx
+                bit = block[block_idx]
+                mantisses[mantisse_idx, bit_position] = bit
+    
+    # Reconstruire les vertices
+    vertices = []
+    for vertex_idx in range(b):
+        vertex = []
+        for coord_idx in range(3):
+            mantisse_idx = vertex_idx * 3 + coord_idx
+            mantisse_bits = mantisses[mantisse_idx]
+            signe, exposant = metadata[mantisse_idx]
+            
+            # Reconstruire la coordonnée
+            coord = reconstruct_coordinate_from_mantissa(mantisse_bits, signe, exposant)
+            vertex.append(coord)
+        vertices.append(vertex)
+    
+    return np.array(vertices)
+
+def reconstruct_coordinate_from_mantissa(mantisse_bits, signe, exposant):
+    """
+    Reconstruit une coordonnée à partir de sa mantisse, signe et exposant
+    
+    mantisse_bits: liste de 23 bits de mantisse
+    signe: bit de signe (0 ou 1)
+    exposant: valeur de l'exposant (8 bits)
+    
+    Retourne: coordonnée flottante reconstruite
+    """
+    # Convertir la mantisse en entier
+    mantisse_int = util.bits_to_int(mantisse_bits)
+    
+    # Reconstruire la représentation IEEE 754
+    # Signe (bit 31) | Exposant (bits 23-30) | Mantisse (bits 0-22)
+    int_repr = (signe << 31) | (exposant << 23) | (mantisse_int & 0x7FFFFF)
+    
+    # Convertir en float
+    coord = np.uint32(int_repr).view(np.float32)
+    
+    return coord

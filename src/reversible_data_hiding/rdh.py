@@ -3,6 +3,7 @@ from gmpy2 import mpz, powmod, invert, gcd, mpz_random, random_state, mpz_urando
 import time
 import datetime, hashlib
 import numpy as np
+import gmpy2
 
 from src.utils import paillier, util, mesh_utils
 
@@ -10,26 +11,31 @@ def run(config: dict, encryption_keys: dict, watermarks: tuple, model):
     print("Run RDH")
     result = {"config" : config}
 
-    result_preprocess = preprocess(model, encryption_keys, config)
+    encrypted_vertices, result_preprocess = preprocess(model, encryption_keys, config)
     result = result | result_preprocess
 
-    result_embed = embed(result_preprocess["encrypted_vertices"], watermarks, encryption_keys["public"], config)
-    embedded_vertices = result_embed["embedded_encrypted_model"]
-    mesh_utils.save_3d_model(result_preprocess["quantified_model"], model["faces"], os.path.join(config["result_folder"], f"quantified_{config["model_name"]}"))
+    embedded_vertices, result_embed = embed(encrypted_vertices, watermarks, encryption_keys["public"], config)
     result = result | result_embed
 
-    result_extract = extract(embedded_vertices, encryption_keys, config["quantisation_factor"], (len(watermarks[0]), len(watermarks[1])))
+    decrypted_vertices, result_extract = extract(embedded_vertices, encryption_keys, config["quantisation_factor"], (len(watermarks[0]), len(watermarks[1])))
     result = result | result_extract
 
-    recovered_mesh = recover_mesh(result_extract["decrypted_vertices"], encryption_keys["public"], config["quantisation_factor"])
+    recovered_mesh = recover_mesh(decrypted_vertices, encryption_keys["public"], config["quantisation_factor"])
     mesh_utils.save_3d_model(recovered_mesh, model["faces"], os.path.join(config["result_folder"], f"recovered_{config["model_name"]}"))
+
+    if config["save_encrypted_file"]:
+        for i in range(len(encrypted_vertices)):
+            for j in range(3):
+                encrypted_vertices[i][j] = int(gmpy2.digits(encrypted_vertices[i][j])) % (10**config["quantisation_factor"])
+        
+        mesh_utils.save_3d_model(encrypted_vertices, model["faces"], os.path.join(config["result_folder"], f"encrypted_{config["model_name"]}"))
 
     result["BER_histogram_shifting"] = util.compare_bits(watermarks[0], result["histogram_shifting_watermark"])
     result["BER_self_blinding"] = util.compare_bits(watermarks[1], result["self_blinding_watermark"])
 
     return result
 
-def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: dict) -> dict:
+def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: dict) -> (np.array, dict):
     print("Pre-processing")
     vertices = model["vertices"]
     quantisation_factor = config["quantisation_factor"]
@@ -37,22 +43,14 @@ def preprocess(model: dict[np.array, np.array], encryption_keys: dict, config: d
     # Quantization
     quant_vertices = np.floor(vertices * (10**quantisation_factor)).astype(int)
 
-    # Reverse quantisation to compare quantified and recovered meshes
-    save_mesh = []
-    for v in quant_vertices:
-        cs = []
-        for c in v:
-            cs.append(c/(10**quantisation_factor))
-        save_mesh.append(cs)
-
     start_time_encryption = time.time()
     pre_pro_vertices = _encryption_preprocessing(quant_vertices, encryption_keys["public"][0])
     enc_vertices = _encrypt_vertices(pre_pro_vertices, encryption_keys["public"])
     time_encryption = time.time() - start_time_encryption
     
-    return {"encrypted_vertices": enc_vertices, "time_encryption": time_encryption, "quantified_model": save_mesh}
+    return enc_vertices, {"time_encryption": time_encryption}
 
-def embed(vertices: np.array, watermark: tuple, public_encryption_keys: dict, config: dict) -> dict:
+def embed(vertices: np.array, watermark: tuple, public_encryption_keys: dict, config: dict) -> (np.array, dict):
     start_time_embedding = time.time()
     embedded_vertices = _histogram_shifting_embedding(vertices, watermark[0], public_encryption_keys)
 
@@ -62,7 +60,7 @@ def embed(vertices: np.array, watermark: tuple, public_encryption_keys: dict, co
 
     time_embedding = time.time() - start_time_embedding
 
-    return {"embedded_encrypted_model": embedded_vertices, "time_embedding": time_embedding, "time_self_blinding": time_self_blinding}
+    return embedded_vertices, {"time_embedding": time_embedding, "time_self_blinding": time_self_blinding}
 
 def _self_blinding_embedding(vertices, watermark, pub_key) -> np.array:
     #Version simple, on tatoue sur les premiers noeuds. Aprés, faut tatouer sur des coordonnées qu'on choisi. Ces coordonnées seront en paramétres. 
@@ -147,7 +145,7 @@ def _histogram_shifting_embedding(vertices, watermark, public_key) -> tuple[list
 
     return marked_vertices
 
-def extract(vertices: np.array, encryption_keys: dict, quantisation_factor: int, watermarks_sizes: tuple) -> dict:
+def extract(vertices: np.array, encryption_keys: dict, quantisation_factor: int, watermarks_sizes: tuple) -> (np.array, dict):
     start_time = time.time()
     self_blinding_watermark = _self_blinding_extraction(vertices, watermarks_sizes[1])
     time_extraction_self_blinding = time.time() - start_time
@@ -160,7 +158,7 @@ def extract(vertices: np.array, encryption_keys: dict, quantisation_factor: int,
     histogram_shifting_watermark = _histogram_shifting_extraction(decrypted_vertices, watermarks_sizes[0], encryption_keys["public"])
     time_extraction_histogram_shifting = time.time() - start_time
     
-    return {"histogram_shifting_watermark": histogram_shifting_watermark, "self_blinding_watermark": self_blinding_watermark, "decrypted_vertices": decrypted_vertices, "time_extraction_histogram_shifting": time_extraction_histogram_shifting, "time_extraction_self_blinding": time_extraction_self_blinding, "time_decryption": time_decryption}
+    return decrypted_vertices, {"histogram_shifting_watermark": histogram_shifting_watermark, "self_blinding_watermark": self_blinding_watermark, "time_extraction_histogram_shifting": time_extraction_histogram_shifting, "time_extraction_self_blinding": time_extraction_self_blinding, "time_decryption": time_decryption}
 
 def _histogram_shifting_extraction(vertices, watermark_size, public_key) -> list:
     

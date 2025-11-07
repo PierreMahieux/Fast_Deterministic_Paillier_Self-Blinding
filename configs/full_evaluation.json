@@ -1,1 +1,1 @@
-{"key_size": 1024, "quantisation_factor": 4, "message_length": 256, "self_blinding_length": 256, "qim_step": 4, "models": "all", "methods": "all"}
+{"key_size": 512, "quantisation_factor": 4, "list_qim_step": [2, 4, 6, 8], "message_length": "max", "self_blinding_length": "max", "qim_step": 4, "models": "all", "methods": ["fdsb"], "save_encrypted_file": true, "block_size": 15, "number_messages": 1}
